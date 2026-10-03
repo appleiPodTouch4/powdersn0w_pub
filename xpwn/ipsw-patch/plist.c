@@ -93,6 +93,11 @@ void releaseArrayEx(ArrayValue* myself, int k) {
                 free(myself->values[i]->key);
                 free(myself->values[i]);
                 break;
+            default:
+                /* Unsupported type: only the base DictValue was allocated. */
+                free(myself->values[i]->key);
+                free(myself->values[i]);
+                break;
         }
     }
     free(myself->values);
@@ -132,6 +137,11 @@ void releaseDictionary(Dictionary* myself) {
                 free(toRelease->key);
                 free(toRelease);
                 break;
+            default:
+                /* Unsupported type: only the base DictValue was allocated. */
+                free(toRelease->key);
+                free(toRelease);
+                break;
         }
     }
     free(myself);
@@ -155,8 +165,11 @@ void createArray(ArrayValue* myself, char* xml) {
         curValue->key = (char*) malloc(sizeof("arraykey"));
         strcpy(curValue->key, "arraykey");
         curValue->next = NULL;
+        curValue->prev = NULL;
+        /* See createDictionary(): never leave the discriminant uninitialised. */
+        curValue->type = 0;
         
-        if(strcmp(valueTag->name, "dict") == 0) {
+        if(strcmp(valueTag->name, "dict") == 0 || strcmp(valueTag->name, "dict/") == 0) {
             curValue->type = DictionaryType;
             curValue = (DictValue*) realloc(curValue, sizeof(Dictionary));
             createDictionary((Dictionary*) curValue, valueTag->xml);
@@ -175,7 +188,11 @@ void createArray(ArrayValue* myself, char* xml) {
             curValue->type = IntegerType;
             curValue = (DictValue*) realloc(curValue, sizeof(IntegerValue));
             sscanf(valueTag->xml, "%d", &(((IntegerValue*)curValue)->value));
-        } else if(strcmp(valueTag->name, "array") == 0) {
+        } else if(strcmp(valueTag->name, "real") == 0) {
+            curValue->type = IntegerType;
+            curValue = (DictValue*) realloc(curValue, sizeof(IntegerValue));
+            ((IntegerValue*)curValue)->value = (int) strtod(valueTag->xml, NULL);
+        } else if(strcmp(valueTag->name, "array") == 0 || strcmp(valueTag->name, "array/") == 0) {
             curValue->type = ArrayType;
             curValue = (DictValue*) realloc(curValue, sizeof(ArrayValue));
             createArray((ArrayValue*) curValue, valueTag->xml);
@@ -187,6 +204,13 @@ void createArray(ArrayValue* myself, char* xml) {
             curValue->type = BoolType;
             curValue = (DictValue*) realloc(curValue, sizeof(BoolValue));
             ((BoolValue*)curValue)->value = FALSE;
+        } else {
+            /* Unsupported value tag: keep the raw text as a string (see
+               createDictionary()). */
+            curValue->type = StringType;
+            curValue = (DictValue*) realloc(curValue, sizeof(StringValue));
+            ((StringValue*)curValue)->value = (char*) malloc(sizeof(char) * (strlen(valueTag->xml) + 1));
+            strcpy(((StringValue*)curValue)->value, valueTag->xml);
         }
         
         myself->values[myself->size - 1] = curValue;
@@ -229,6 +253,11 @@ void removeKey(Dictionary* dict, char* key) {
                     free(toRelease->key);
                     free(toRelease);
                     break;
+                default:
+                    /* Unsupported type: only the base DictValue was allocated. */
+                    free(toRelease->key);
+                    free(toRelease);
+                    break;
             }
             return;
         }
@@ -263,6 +292,11 @@ void createDictionary(Dictionary* myself, char* xml) {
         curValue->key = (char*) malloc(sizeof(char) * (strlen(keyTag->xml) + 1));
         strcpy(curValue->key, keyTag->xml);
         curValue->next = NULL;
+        curValue->prev = NULL;
+        /* Initialise the discriminant. If the value tag below is not a type we
+           implement, the struct stays at its malloc'd size and an uninitialised
+           `type' would make releaseDictionary() free garbage pointers. */
+        curValue->type = 0;
         releaseTag(keyTag);
         
         
@@ -290,6 +324,14 @@ void createDictionary(Dictionary* myself, char* xml) {
             curValue->type = IntegerType;
             curValue = (DictValue*) realloc(curValue, sizeof(IntegerValue));
             sscanf(valueTag->xml, "%d", &(((IntegerValue*)curValue)->value));
+        } else if(strcmp(valueTag->name, "real") == 0) {
+            /* Real values are used for integral settings such as
+               RootFilesystemSize, which the callers read through IntegerValue.
+               Store them as integers so those lookups return a valid value
+               instead of leaving the struct uninitialised. */
+            curValue->type = IntegerType;
+            curValue = (DictValue*) realloc(curValue, sizeof(IntegerValue));
+            ((IntegerValue*)curValue)->value = (int) strtod(valueTag->xml, NULL);
         } else if(strcmp(valueTag->name, "array") == 0 || strcmp(valueTag->name, "array/") == 0) {
             curValue->type = ArrayType;
             curValue = (DictValue*) realloc(curValue, sizeof(ArrayValue));
@@ -302,6 +344,14 @@ void createDictionary(Dictionary* myself, char* xml) {
             curValue->type = BoolType;
             curValue = (DictValue*) realloc(curValue, sizeof(BoolValue));
             ((BoolValue*)curValue)->value = FALSE;
+        } else {
+            /* Unsupported value tag (e.g. <date>, or a self-closing <string/>).
+               Keep the raw text as a string so the entry is always a complete,
+               in-bounds allocation that releaseDictionary() can safely free. */
+            curValue->type = StringType;
+            curValue = (DictValue*) realloc(curValue, sizeof(StringValue));
+            ((StringValue*)curValue)->value = (char*) malloc(sizeof(char) * (strlen(valueTag->xml) + 1));
+            strcpy(((StringValue*)curValue)->value, valueTag->xml);
         }
         
         curValue->prev = lastValue;
