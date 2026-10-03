@@ -20,8 +20,10 @@ IF(OPENSSL_FOUND)
 	include_directories(${OPENSSL_INCLUDE_DIR})
 	target_link_libraries(dmg ${OPENSSL_LIBRARIES})
 	IF(WIN32)
-		TARGET_LINK_LIBRARIES(dmg gdi32)
+		# gdi32 for the image code; ws2_32/crypt32/bcrypt/userenv are
+		# required by the statically linked OpenSSL.
+		TARGET_LINK_LIBRARIES(dmg gdi32 ws2_32 crypt32 bcrypt userenv)
 	ENDIF(WIN32)
 ENDIF(OPENSSL_FOUND)
 
-target_link_libraries(dmg common hfs z ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(dmg common hfs ${ZLIB_LIBRARIES} ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})

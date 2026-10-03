@@ -15,6 +15,16 @@ ENDIF(BUILD_STATIC)
 
 include_directories (${PROJECT_SOURCE_DIR}/include)
 
+# MinGW-w64 does not implement every GNU/glibc extension the sources assume
+# (missing <fnmatch.h>, no memmem()). Pull in the wincompat shims.
+IF(WIN32)
+	include_directories (${PROJECT_SOURCE_DIR}/wincompat)
+	SET(WINCOMPAT_SOURCES ${PROJECT_SOURCE_DIR}/wincompat/win32_compat.c)
+	IF(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+		add_definitions(-include ${PROJECT_SOURCE_DIR}/wincompat/win32_compat.h)
+	ENDIF(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+ENDIF(WIN32)
+
 add_subdirectory (common)
 add_subdirectory (minizip)
 add_subdirectory (dmg)

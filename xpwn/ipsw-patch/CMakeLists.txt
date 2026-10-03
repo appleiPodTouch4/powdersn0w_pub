@@ -40,7 +40,13 @@ IF(HAVE_HW_CRYPTO)
 	add_definitions(-DHAVE_HW_CRYPTO)
 ENDIF(HAVE_HW_CRYPTO)
 
-add_library(xpwn bspatch.c ibootim.c img3.c libxpwn.c lzss.c lzssfile.c nor_files.c outputstate.c plist.c pwnutil.c)
+IF(WIN32)
+	# MinGW-w64 ships no <fnmatch.h>; supply the wincompat shim instead.
+	include_directories(${PROJECT_SOURCE_DIR}/wincompat)
+	SET(WINCOMPAT_SOURCES ${PROJECT_SOURCE_DIR}/wincompat/fnmatch.c)
+ENDIF(WIN32)
+
+add_library(xpwn bspatch.c ibootim.c img3.c libxpwn.c lzss.c lzssfile.c nor_files.c outputstate.c plist.c pwnutil.c ${WINCOMPAT_SOURCES})
 
 IF(HAVE_HW_CRYPTO)
 	target_link_libraries(xpwn IOKit)
@@ -60,6 +66,10 @@ IF(APPLE)
 			${PROJECT_BINARY_DIR}/dmg/libdmg.a ${PNG_LIBRARIES} ${BZIP2_LIBRARIES}
 			${CRYPTO_LIBRARIES}
 		DEPENDS xpwn dmg hfs common minizip)
+ELSEIF(WIN32)
+	# Bundling a single libXPwn.a relies on GNU-only linker flags
+	# (--whole-archive / -nostdlib / -r) that MinGW's PE linker cannot do.
+	# Windows ships self-contained executables instead, so skip this target.
 ELSE(APPLE)
 	ADD_CUSTOM_TARGET(libXPwn.a
 		COMMAND ${CMAKE_C_COMPILER} ${CMAKE_C_FLAGS}
@@ -74,7 +84,9 @@ ELSE(APPLE)
 ENDIF(APPLE)
 
 IF(WIN32)
-	TARGET_LINK_LIBRARIES(xpwn gdi32)
+	# gdi32 covers the DMG/HFS image code; ws2_32/crypt32/bcrypt/userenv are
+	# pulled in by the statically linked OpenSSL.
+	TARGET_LINK_LIBRARIES(xpwn gdi32 ws2_32 crypt32 bcrypt userenv)
 ENDIF(WIN32)
 
 add_executable(ipsw main.c)
@@ -86,11 +98,11 @@ target_link_libraries(validate xpwn)
 add_executable(ticket ticket.c)
 target_link_libraries(ticket xpwn)
 
-IF(WIN32)
+IF(WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/itunespwn.c")
 	ADD_EXECUTABLE(itunespwn itunespwn.c)
 	TARGET_LINK_LIBRARIES(itunespwn xpwn gdi32)
 	install(TARGETS itunespwn RUNTIME DESTINATION .)
-ENDIF(WIN32)
+ENDIF(WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/itunespwn.c")
 
 install(TARGETS ipsw validate ticket RUNTIME DESTINATION .)
 install(DIRECTORY FirmwareBundles/ DESTINATION FirmwareBundles)

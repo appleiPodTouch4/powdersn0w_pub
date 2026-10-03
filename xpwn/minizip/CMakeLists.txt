@@ -11,4 +11,7 @@ link_directories(${ZLIB_LIBRARIES})
 
 add_library(minizip ioapi.c unzip.c zip.c)
 
-target_link_libraries(minizip z)
+# Use the located zlib explicitly instead of a bare "-lz": on MinGW, -lz
+# prefers libz.dll.a (import lib) over libz.a, which collides with the static
+# libz.a found by FindZLIB and produces "multiple definition of `crc32'".
+target_link_libraries(minizip ${ZLIB_LIBRARIES})
